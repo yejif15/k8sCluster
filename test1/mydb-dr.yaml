@@ -6,7 +6,7 @@ spec:
   selector:
     matchLabels:
       app: mydb
-  serviceName: mydb
+  serviceName: mydb-read
   replicas: 2 
   template:
     metadata:
@@ -28,6 +28,7 @@ spec:
       initContainers:
       - name: init-mysql
         image: docker.io/rlarlgkd/mysql:0.13
+        imagePullPolicy: Always
         command:
         - bash
         - "-c"
@@ -48,7 +49,7 @@ spec:
         - name: config-map
           mountPath: /mnt/config-map
       - name: clone-mysql
-        image: gcr.io/google-samples/xtrabackup:1.0  
+        image: gcr.io/google-samples/xtrabackup:1.0
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
@@ -64,7 +65,8 @@ spec:
           [[ $HOSTNAME =~ -([0-9]+)$ ]] || exit 1
           ordinal=${BASH_REMATCH[1]}
           [[ $ordinal -eq 0 ]] && exit 0
-          ncat --recv-only mydb-$(($ordinal-1)).mydb 3307 | xbstream -x -C /var/lib/mysql
+          #ncat --recv-only mydb-$(($ordinal-1)).mydb 3307 | xbstream -x -C /var/lib/mysql
+          ncat --recv-only mydb 3307 | xbstream -x -C /var/lib/mysql
           xtrabackup --prepare --user=root --password=$MYSQL_ROOT_PASSWORD --target-dir=/var/lib/mysql
         volumeMounts:
         - name: data
@@ -75,20 +77,33 @@ spec:
       containers:
       - name: mysql
         image: docker.io/rlarlgkd/mysql:0.13
+        imagePullPolicy: Always
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
             secretKeyRef:
               name: mysql-root
               key: password
+        #command:
+        #- bash
+        #- "-c"
+        #- |
+        #  touch /tmp/healthy
         livenessProbe:
-          exec:
-            command:
-            - bash
-            - "-c"
-            - |
-              set -ex
-              mysqladmin -p$MYSQL_ROOT_PASSWORD ping &> /dev/null
+        #  exec:
+        #    command:
+        #    - bash
+        #    - "-c"
+        #    - |
+        #      set -ex
+        #      mysqladmin -p$MYSQL_ROOT_PASSWORD ping &> /dev/null
+        #  exec:
+        #    command:
+        #    - cat
+        #    - /tmp/healthy          
+          httpGet:
+            path: /health
+            port: 3306
           initialDelaySeconds: 300
           periodSeconds: 30
           timeoutSeconds: 5
@@ -112,8 +127,18 @@ spec:
           subPath: mysql
         - name: conf
           mountPath: /etc/mysql/conf.d
+      #- name: liveness
+      #  image: registry.k8s.io/liveness
+      #  args:
+      #  - /server
+      #  livenessProbe:
+      #    httpGet:
+      #      path: /healthz
+      #      port: 8080
+      #    initialDelaySeconds: 30
+      #    periodSeconds: 10
       - name: xtrabackup
-        image: gcr.io/google-samples/xtrabackup:1.0  
+        image: gcr.io/google-samples/xtrabackup:1.0
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
@@ -147,7 +172,7 @@ spec:
             echo "Initializing replication from clone position"
             mysql -h 127.0.0.1 \
                   -e "$(<change_master_to.sql.in), \
-                          MASTER_HOST='mydb-0.mydb', \
+                          MASTER_HOST='mydb', \
                           MASTER_USER='root', \
                           MASTER_PASSWORD='dkagh1.', \
                           MASTER_CONNECT_RETRY=10; \
@@ -179,6 +204,3 @@ spec:
         requests:
           storage: 10Gi
       storageClassName: nfs-client
-
-
-
