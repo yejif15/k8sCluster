@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp-ing
+spec:
+  defaultBackend:
+    service:
+      name: app-lb
+      port:
+        number: 80
+  rules:
+  - host: myapp.fm3.shop
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app-lb
+            port:
+              number: 80
